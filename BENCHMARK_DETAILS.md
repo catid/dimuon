@@ -10,6 +10,40 @@
 - Per-GPU microbatch 2, sequence length 512, BF16 model compute, FP32 cross-entropy.
 - Optimizers: fused AdamW, PyTorch Muon, and grouped Dimuon. Grouped Dimuon batches equal-shaped factors into one batched Polar Express update; random-matrix tests show grouped and ungrouped updates match in tested cases.
 
+## Prospective equal-effort confirmation
+
+The completed study ran all 54 confirmation jobs after all 54 tuning jobs.
+Each of the 18 cells (2 datasets × 3 parameterizations × 3 optimizers) used
+three fresh seeds (`2345`, `3456`, `4567`) at the learning rate selected from
+three predeclared candidates on validation with seed `1234`. No test metric was
+used for selection. Each job used 200 updates including 10 warmups, per-GPU
+batch 2, sequence length 512, and 32 test evaluation batches on all 8 B300s.
+The full per-seed tables and compact JSON/CSV are in
+[`EQUAL_EFFORT_CONFIRMATION.md`](EQUAL_EFFORT_CONFIRMATION.md) and
+`results/equal_effort_confirmation.{json,csv}`.
+
+Held-out test CE (mean ± sample SD; lower is better):
+
+| Parameterization / split | AdamW | Muon | Dimuon |
+| --- | ---: | ---: | ---: |
+| Standard LoRA / GSM8K | 1.5293 ± 0.0012 | **1.4990 ± 0.0032** | 1.5314 ± 0.0019 |
+| Standard LoRA / MATH | **0.4905 ± 0.0005** | 0.4946 ± 0.0007 | 0.5078 ± 0.0018 |
+| Full NoRA / GSM8K | 1.4472 ± 0.0042 | 1.4242 ± 0.0084 | **1.3893 ± 0.0013** |
+| Full NoRA / MATH | 0.5279 ± 0.0031 | 0.7021 ± 0.0192 | **0.5056 ± 0.0031** |
+| IniLoRA-alpha / GSM8K | **1.4939 ± 0.0149** | 2.1378 ± 0.6797 | 1.5060 ± 0.0137 |
+| IniLoRA-alpha / MATH | **0.7227 ± 0.0065** | 1.5610 ± 0.5389 | 0.7409 ± 0.0044 |
+
+This test panel gives Dimuon the lowest CE in both Full NoRA cells, Muon the
+lowest CE in GSM8K Standard LoRA, and AdamW the lowest CE in MATH Standard
+LoRA and both IniLoRA-alpha cells. It does not support a blanket quality win
+for any optimizer.
+
+Mean global throughput for Standard LoRA was 44.5k tok/s for AdamW, 26.9k
+for Muon, and 38.3k for Dimuon. The optimizer state stayed at 1.61 GB/rank
+(AdamW), 0.81 GB/rank (Muon), and 0.40 GB/rank (Dimuon). Throughput and state
+are systems outcomes; the CE rows are the fixed short test slice described
+above, not full-dataset accuracy.
+
 ## SFT results
 
 Throughput is global tokens/s. Optimizer state is measured on one replicated rank.
@@ -80,18 +114,32 @@ A lower-LR panel (AdamW 3e-5, Muon 3e-4, Dimuon 1e-3) reached held-out CE 0.7194
 
 These are synchronized DDP plumbing diagnostics, not an RL quality result. Numeric answers receive bounded log-distance shaping; the symbolic fallback is known to be unsound for some MATH expressions. The reward baseline is rank-local, and the sampling/log-probability mismatch invalidates quality ranking. Do not cite these rewards or exact-match counts as evidence for any optimizer.
 
+## Post-study optimizer speed fix
+
+The benchmark always sets `grad_clip_norm=0`, but both Dimuon implementations
+were still converting every trainable gradient to the state dtype and reducing
+its full norm before discarding the result. The patch now performs that
+reduction only when clipping is enabled; clipping behavior is unchanged.
+
+A matched 30-update A/B on 8 B300s (same Qwen2.5-32B checkpoint, seed 7777,
+rank 32, batch 2, sequence 512, five warmups) measured 260.4 ms → 215.2 ms
+per timed step and 31,455 → 38,064 global tokens/s: a 17.4% step-time
+reduction and 21.0% throughput increase. Before/after losses remained finite
+and held-out CE was 0.30647/0.30681. This is a microbenchmark of the optimizer
+patch, separate from the preregistered confirmation numbers above.
+
 ## Interpretation
 
-The defensible result is a 32B, eight-B300 SFT/NoRA engineering pilot with a
-second-seed replication check: Dimuon reaches the lowest held-out CE in the
-standard LoRA and full NoRA panels while using one quarter of AdamW's optimizer
-state and running materially faster than Muon. AdamW remains faster in raw
-standard-LoRA throughput. The IniLoRA-alpha two-seed panel also favors Dimuon
-at its separately tuned lower learning rates, but its BF16 residual
-subtraction changes the starting model. The legacy RL artifacts validate some
-DDP plumbing but are invalid for quality ranking because of their sampling and
-answer-verification protocol. The strict v2 harness has passed CPU tests and
-an 8-GPU smoke, but no v2 RL quality result is claimed. The exact local
-DeepSeek-V4.1-Flash checkpoint could not be used because its available
-implementation is inference-only. A full equal-effort study is specified in
-`STUDY_PROTOCOL.md`; the 20-update panels are not that study.
+The strongest reproducible systems result is a 32B, eight-B300 study in which
+Dimuon uses one quarter of AdamW's optimizer state and runs materially faster
+than Muon. The completed equal-effort test panel favors Dimuon on both Full
+NoRA cells, while Muon or AdamW is lower on the other parameterization/task
+cells; it does not justify a blanket optimizer quality claim. AdamW remains
+the fastest optimizer in raw Standard-LoRA throughput. The IniLoRA-alpha
+residual subtraction changes the effective BF16 starting model, so its rows
+are an optimizer comparison within that parameterization. The legacy RL
+artifacts validate some DDP plumbing but are invalid for quality ranking
+because of their sampling and answer-verification protocol. The strict v2
+harness has passed CPU tests and an 8-GPU smoke, but no v2 RL quality result is
+claimed. The exact local DeepSeek-V4.1-Flash checkpoint could not be used
+because its available implementation is inference-only.

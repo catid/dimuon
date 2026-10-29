@@ -2,9 +2,45 @@
 
 A compact reproduction of the Dimuon optimizer comparison on a **32B** language model using **all 8 B300 GPUs**. The base model is frozen; only rank-32 LoRA factors on the `gate_proj`, `up_proj`, and `down_proj` FFN projections in all 64 Qwen2.5-32B layers are trained.
 
-> The headline result is a promising SFT/NoRA pilot. The RL artifacts are retained as debugging provenance only: an audit found that the legacy sampler's effective distribution differed from the gradient log-probability and that symbolic-answer scoring could accept incomplete answers. No RL quality ranking is claimed.
+> The repository contains both a short historical pilot and a completed equal-effort confirmation study. The RL artifacts are retained as debugging provenance only: an audit found that the legacy sampler's effective distribution differed from the gradient log-probability and that symbolic-answer scoring could accept incomplete answers. No RL quality ranking is claimed.
 
-## Headline results
+## Equal-effort confirmation (completed)
+
+The preregistered study completed all 54 confirmation jobs after validation-only
+LR selection: 3 fresh seeds for each of 2 datasets × 3 parameterizations × 3
+optimizers. The table reports held-out **test** teacher-forced CE (mean ± sample
+SD; lower is better).
+
+| Parameterization / split | AdamW | Muon | Dimuon |
+| --- | ---: | ---: | ---: |
+| Standard LoRA / GSM8K | 1.5293 ± 0.0012 | **1.4990 ± 0.0032** | 1.5314 ± 0.0019 |
+| Standard LoRA / MATH | **0.4905 ± 0.0005** | 0.4946 ± 0.0007 | 0.5078 ± 0.0018 |
+| Full NoRA / GSM8K | 1.4472 ± 0.0042 | 1.4242 ± 0.0084 | **1.3893 ± 0.0013** |
+| Full NoRA / MATH | 0.5279 ± 0.0031 | 0.7021 ± 0.0192 | **0.5056 ± 0.0031** |
+| IniLoRA-alpha / GSM8K | **1.4939 ± 0.0149** | 2.1378 ± 0.6797 | 1.5060 ± 0.0137 |
+| IniLoRA-alpha / MATH | **0.7227 ± 0.0065** | 1.5610 ± 0.5389 | 0.7409 ± 0.0044 |
+
+For the confirmed Standard-LoRA runs, mean global throughput was 44.5k
+tok/s (AdamW), 26.9k (Muon), and 38.3k (Dimuon). Dimuon kept the same
+0.40 GB/rank optimizer state from the pilot, versus 0.81 GB for Muon and
+1.61 GB for AdamW. The complete per-seed CE, throughput, LR, and protocol
+tables are in [`EQUAL_EFFORT_CONFIRMATION.md`](EQUAL_EFFORT_CONFIRMATION.md),
+with compact machine-readable data in
+[`results/equal_effort_confirmation.json`](results/equal_effort_confirmation.json)
+and [`results/equal_effort_confirmation.csv`](results/equal_effort_confirmation.csv).
+
+After the study, I removed an unused full-gradient norm reduction from Dimuon
+when `grad_clip_norm=0` (the benchmark setting). A matched 30-update 8-GPU A/B
+measured 31.5k → 38.1k global tok/s (17.4% lower timed step, 21.0% higher
+throughput), with finite losses and nearly identical held-out CE. The compact
+record is [`results/dimuon_gradnorm_speed_ab.json`](results/dimuon_gradnorm_speed_ab.json).
+
+This confirmation does not support a blanket Dimuon quality win: Dimuon is
+best in both Full NoRA cells, while Muon wins GSM8K Standard LoRA and AdamW
+wins MATH Standard LoRA plus both IniLoRA-alpha cells on this fixed test
+slice.
+
+## Historical pilot results (short, post-hoc)
 
 Held-out teacher-forced CE, lower is better. Each row uses the same model, token stream, seed, batch shape, and update budget for all three optimizers. Standard LoRA uses 50 updates; full NoRA and IniLoRA-alpha use 20. Learning rates were selected post-hoc from short sweeps; search effort was not yet balanced across all method/parameterization pairs.
 
@@ -20,7 +56,7 @@ Held-out teacher-forced CE, lower is better. Each row uses the same model, token
 
 ![Held-out quality](figures/quality.png)
 
-For standard LoRA, the optimizer state per replicated rank was 1.61 GB for AdamW, 0.81 GB for Muon, and 0.40 GB for Dimuon. Standard-LoRA throughput averaged across GSM8K/MATH was 42.6k, 29.0k, and 38.4k global tokens/s respectively. The GSM8K Dimuon row comes from a separate matched run at the selected LR (0.012); the earlier raw all-method file includes an untuned LR (0.003) arm and is retained as an ablation.
+In the historical pilot, the optimizer state per replicated rank was 1.61 GB for AdamW, 0.81 GB for Muon, and 0.40 GB for Dimuon. The completed confirmation reports 44.5k, 26.9k, and 38.3k global tokens/s for Standard LoRA; pilot throughput values below remain labeled as pilot measurements. The GSM8K Dimuon row comes from a separate matched run at the selected LR (0.012); the earlier raw all-method file includes an untuned LR (0.003) arm and is retained as an ablation.
 
 ![Systems comparison](figures/systems.png)
 
@@ -35,12 +71,9 @@ For standard LoRA, the optimizer state per replicated rank was 1.61 GB for AdamW
 ## Replication checks
 
 The additional matched two-seed 20-update panels are in
-[`MULTI_SEED_PILOT.md`](MULTI_SEED_PILOT.md). At the fixed learning rates used
-for each parameterization, Dimuon has the lowest mean held-out CE in both
-standard LoRA and full NoRA on GSM8K and MATH. The IniLoRA-alpha panel also
-favors Dimuon at its separately tuned lower learning rates. These are short
-variance checks, not long-run convergence or a claim that one optimizer wins
-for every learning-rate budget.
+[`MULTI_SEED_PILOT.md`](MULTI_SEED_PILOT.md). They remain pilot diagnostics;
+the completed validation-selected, held-out confirmation above is the
+comparison to use for the preregistered protocol.
 
 ## RL status
 
@@ -84,7 +117,7 @@ quality evidence in the tables.
 
 ## Reproduce
 
-The scripts expect a local model and the pinned question-only manifests. The commands below are the exact SFT workload shape used for the headline tables:
+The scripts expect a local model and the pinned question-only manifests. The commands below reproduce the short historical pilot tables; the completed equal-effort study uses `run_study.py` and the fixed protocol in `STUDY_PROTOCOL.md`:
 
 ```bash
 MODEL=/path/to/Qwen2.5-32B-Instruct
@@ -119,6 +152,6 @@ The optimizer implementation is in [`dimuon.py`](dimuon.py); the SFT harness is 
 ## Scope and limitations
 
 - The measured checkpoint is Qwen2.5-32B-Instruct, not DeepSeek-V4.1. The available local DeepSeek-V4.1-Flash implementation is inference-only and cannot provide a valid autograd training run.
-- These SFT runs are short (50 updates for the headline standard-LoRA panel, 20 for the added replication checks and for NoRA/IniLoRA-alpha). The two-seed checks do not replace a longer equal-effort hyperparameter study. The CE metric includes the prompt/question text and short final answers, rather than measuring exact-answer accuracy or response-only reasoning quality.
+- The historical pilot SFT runs are short (50 updates for the standard-LoRA panel, 20 for NoRA/IniLoRA-alpha). The completed equal-effort confirmation uses 200 updates per job but only 32 fixed test batches and three confirmation seeds. Its CE metric includes the prompt/question text and short final answers, rather than measuring exact-answer accuracy or response-only reasoning quality.
 - The RL comparison is currently invalid for quality ranking: the legacy artifacts have both a sampling-policy/log-probability mismatch and an incomplete symbolic-answer scorer. The DDP-forward synchronization fix itself passed, but a new sampler, verifier, and matched multi-seed protocol are required before RL claims.
-- No model weights, datasets, checkpoints, or large logs are committed. See [`BENCHMARK_DETAILS.md`](BENCHMARK_DETAILS.md) for the complete protocol, tables, learning rates, and caveats.
+- No model weights, datasets, checkpoints, or large logs are committed. See [`BENCHMARK_DETAILS.md`](BENCHMARK_DETAILS.md) and [`EQUAL_EFFORT_CONFIRMATION.md`](EQUAL_EFFORT_CONFIRMATION.md) for the complete protocol, tables, learning rates, and caveats.

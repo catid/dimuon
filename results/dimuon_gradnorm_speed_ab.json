@@ -1,0 +1,36 @@
+{
+  "description": "Matched 8-GPU A/B for the semantics-preserving Dimuon optimization that skips the unused grad-norm reduction when grad_clip_norm=0.",
+  "config": {
+    "model": "Qwen2.5-32B-Instruct",
+    "world": 8,
+    "batch": 2,
+    "seq": 512,
+    "rank": 32,
+    "last_n": 64,
+    "steps": 30,
+    "warmup": 5,
+    "seed": 7777,
+    "init": "lora",
+    "dimuon_lr": 0.003
+  },
+  "before": {
+    "source": "HEAD dimuon.py",
+    "mean_step_ms": 260.43476407648996,
+    "tokens_per_s": 31455.09405800372,
+    "final_loss": 0.327909130603075,
+    "eval_loss": 0.3064695321954787
+  },
+  "after": {
+    "source": "patched dimuon.py",
+    "mean_step_ms": 215.2168150455691,
+    "tokens_per_s": 38063.940302552386,
+    "final_loss": 0.3284607082605362,
+    "eval_loss": 0.3068123091943562
+  },
+  "speedup_percent": 21.01041641255894,
+  "step_time_reduction_percent": 17.36248583835003,
+  "nonfinite_steps": {
+    "before": [],
+    "after": []
+  }
+}

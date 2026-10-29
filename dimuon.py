@@ -70,10 +70,11 @@ class Dimuon(torch.optim.Optimizer):
         grads = [p.grad for p in params if p.grad is not None]
         if not grads and not self.state:
             return loss
-        total = torch.sqrt(sum((g.to(self.state_dtype) ** 2).sum() for g in grads)) if grads else None
         scale = 1.0
-        if self.grad_clip_norm > 0 and total is not None and float(total) > 0:
-            scale = min(1.0, self.grad_clip_norm / float(total))
+        if self.grad_clip_norm > 0 and grads:
+            total = torch.sqrt(sum((g.to(self.state_dtype) ** 2).sum() for g in grads))
+            if float(total) > 0:
+                scale = min(1.0, self.grad_clip_norm / float(total))
         for group in self.param_groups:
             lr, beta1 = group["lr"], group["beta1"]
             # Group equal-shaped factors into one batched Polar Express call.  A
@@ -155,10 +156,11 @@ class GroupedDimuon(Dimuon):
         grads = [p.grad for p in params if p.grad is not None]
         if not grads and not self.state:
             return loss
-        total = torch.sqrt(sum((g.to(self.state_dtype) ** 2).sum() for g in grads)) if grads else None
         scale = 1.0
-        if self.grad_clip_norm > 0 and total is not None and float(total) > 0:
-            scale = min(1.0, self.grad_clip_norm / float(total))
+        if self.grad_clip_norm > 0 and grads:
+            total = torch.sqrt(sum((g.to(self.state_dtype) ** 2).sum() for g in grads))
+            if float(total) > 0:
+                scale = min(1.0, self.grad_clip_norm / float(total))
         groups = {}
         for p in params:
             if p.grad is None and "momentum" not in self.state[p]:
