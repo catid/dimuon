@@ -2,7 +2,7 @@
 
 A compact reproduction of the Dimuon optimizer comparison on a **32B** language model using **all 8 B300 GPUs**. The base model is frozen; only rank-32 LoRA factors on the `gate_proj`, `up_proj`, and `down_proj` FFN projections in all 64 Qwen2.5-32B layers are trained.
 
-> The headline result is a promising SFT/NoRA pilot. The original RL pilots predate a DDP synchronization fix and are excluded from optimizer-comparison evidence. The full RL study remains incomplete.
+> The headline result is a promising SFT/NoRA pilot. The RL artifacts are retained as debugging provenance only: an audit found that the legacy sampler's effective distribution differed from the gradient log-probability and that symbolic-answer scoring could accept incomplete answers. No RL quality ranking is claimed.
 
 ## Headline results
 
@@ -32,23 +32,55 @@ For standard LoRA, the optimizer state per replicated rank was 1.61 GB for AdamW
 
 `*`Mean of the clean 50-update GSM8K and MATH SFT runs; throughput is workload-specific, not a universal hardware peak.
 
+## Replication checks
+
+The additional matched two-seed 20-update panels are in
+[`MULTI_SEED_PILOT.md`](MULTI_SEED_PILOT.md). At the fixed learning rates used
+for each parameterization, Dimuon has the lowest mean held-out CE in both
+standard LoRA and full NoRA on GSM8K and MATH. The IniLoRA-alpha panel also
+favors Dimuon at its separately tuned lower learning rates. These are short
+variance checks, not long-run convergence or a claim that one optimizer wins
+for every learning-rate budget.
+
 ## RL status
 
 The repository contains a real synchronous REINFORCE loop: sample completions,
 score answers, recompute sampled sequence log-probabilities, and apply the
 optimizer update. The current harness calls the DDP wrapper for the
 gradient-bearing forward and checks adapter replication after every update.
-The corrected 16-update pilots are still diagnostic rather than confirmatory:
+The legacy pilots are not valid quality measurements. They are retained only
+to document the DDP plumbing fix:
 
 | Task | AdamW reward / exact | Muon reward / exact | Dimuon reward / exact |
 | --- | --- | --- | --- |
 | GSM8K | 0.0549 / 0% | 0.0806 / 0% | 0.0588 / 6.25% |
 | MATH | 0.0929 / 12.5% | 0.0869 / 6.25% | 0.0850 / 6.25% |
 
-These one-seed pilots use 128 rollouts per optimizer, a 16-question held-out
-set, and bounded numeric shaping. They do not establish an RL optimizer win;
-larger multi-seed runs with a canonical reward protocol are still needed.
-The pre-fix JSONs remain in the repository as provenance only.
+These artifacts use 128 rollouts per optimizer, a 16-question held-out set,
+and bounded numeric shaping. They must not be used for optimizer ranking. An
+audit found that the model's inherited `top_k=20` and `repetition_penalty=1.05`
+were active during sampling even though the gradient recomputation assumed
+raw logits, and the symbolic-answer scorer could reduce an unboxed expression
+to its last coefficient. A replacement protocol is required before reporting
+RL quality.
+
+A separate 32-update diagnostic seed had these raw outputs before that audit:
+
+| Task | AdamW reward / exact | Muon reward / exact | Dimuon reward / exact |
+| --- | --- | --- | --- |
+| GSM8K | 0.0660 / 0% | 0.0690 / 0% | 0.0468 / 12.5% |
+| MATH | 0.0720 / 0% | 0.0905 / 12.5% | 0.0796 / 12.5% |
+
+Dimuon was faster than Muon in these runs, but the metrics are invalid for
+quality comparison for the same reason. They are retained as provenance only.
+
+`dimuon_lora_rl_v2.py` is the replacement strict harness. It uses an explicit
+raw-policy generation configuration, the tokenizer chat template, complete
+boxed answers, `math_verify` for symbolic/numeric equivalence, summed response
+log-probabilities, a global previous-step baseline, full split-disjointness
+checks, and a full adapter digest across ranks. Its six CPU protocol tests
+pass; the 8-GPU smoke artifacts are protocol checks only and are not used as
+quality evidence in the tables.
 
 ## Reproduce
 
@@ -77,11 +109,16 @@ Generate the README plots from committed JSON files with:
 python make_figures.py
 ```
 
-The optimizer implementation is in [`dimuon.py`](dimuon.py); the SFT harness is [`dimuon_lora_benchmark.py`](dimuon_lora_benchmark.py); the policy-gradient diagnostic is [`dimuon_lora_rl.py`](dimuon_lora_rl.py).
+For a preregistered equal-effort comparison with validation-only LR selection
+and held-out confirmation seeds, use [`run_study.py`](run_study.py) and read
+[`STUDY_PROTOCOL.md`](STUDY_PROTOCOL.md). It plans by default; pass
+`--execute` only after reviewing the generated plan.
+
+The optimizer implementation is in [`dimuon.py`](dimuon.py); the SFT harness is [`dimuon_lora_benchmark.py`](dimuon_lora_benchmark.py); the legacy policy-gradient diagnostic is [`dimuon_lora_rl.py`](dimuon_lora_rl.py); the replacement protocol is [`dimuon_lora_rl_v2.py`](dimuon_lora_rl_v2.py), with CPU checks in [`test_rl_v2.py`](test_rl_v2.py).
 
 ## Scope and limitations
 
 - The measured checkpoint is Qwen2.5-32B-Instruct, not DeepSeek-V4.1. The available local DeepSeek-V4.1-Flash implementation is inference-only and cannot provide a valid autograd training run.
-- These SFT runs are short (50 updates for standard LoRA, 20 for NoRA/IniLoRA-alpha), single-seed studies. The equal-effort, multi-seed optimizer comparison remains incomplete. The CE metric includes the prompt/question text and short final answers, rather than measuring exact-answer accuracy or response-only reasoning quality.
-- The RL comparison is incomplete: the legacy pilot artifacts predate a DDP-forward synchronization fix and are explicitly invalid for optimizer ranking. A current multi-seed, larger-rollout run with a canonical reward protocol is still needed.
+- These SFT runs are short (50 updates for the headline standard-LoRA panel, 20 for the added replication checks and for NoRA/IniLoRA-alpha). The two-seed checks do not replace a longer equal-effort hyperparameter study. The CE metric includes the prompt/question text and short final answers, rather than measuring exact-answer accuracy or response-only reasoning quality.
+- The RL comparison is currently invalid for quality ranking: the legacy artifacts have both a sampling-policy/log-probability mismatch and an incomplete symbolic-answer scorer. The DDP-forward synchronization fix itself passed, but a new sampler, verifier, and matched multi-seed protocol are required before RL claims.
 - No model weights, datasets, checkpoints, or large logs are committed. See [`BENCHMARK_DETAILS.md`](BENCHMARK_DETAILS.md) for the complete protocol, tables, learning rates, and caveats.

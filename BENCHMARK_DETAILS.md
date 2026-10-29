@@ -67,7 +67,7 @@ A lower-LR panel (AdamW 3e-5, Muon 3e-4, Dimuon 1e-3) reached held-out CE 0.7194
 
 ## RL diagnostics
 
-`dimuon_lora_rl.py` performs actual synchronous REINFORCE: sampled completions are scored, sampled sequence log-probabilities are recomputed with gradients, and the optimizer updates FFN adapters. The current code calls the DDP wrapper for the gradient-bearing forward and checks adapter replication after each update. The original pilot JSONs remain as pre-fix provenance; corrected artifacts are `results/gsm8k_rl16_ddpfix.json` and `results/math_rl16_ddpfix.json`.
+`dimuon_lora_rl.py` is retained as a DDP-plumbing diagnostic. It calls the DDP wrapper for the gradient-bearing forward and checks adapter replication after each update. Its quality artifacts must not be used for optimizer ranking: the checkpoint's inherited `top_k=20` and `repetition_penalty=1.05` remained active during generation while the backward pass used raw-logit log-probabilities, and its symbolic-answer fallback can score an incomplete expression by its last numeric coefficient. A replacement RL harness is required for valid quality evidence.
 
 | Task | Optimizer | Mean shaped reward | Greedy held-out exact | Rollout tok/s | State |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -78,8 +78,20 @@ A lower-LR panel (AdamW 3e-5, Muon 3e-4, Dimuon 1e-3) reached held-out CE 0.7194
 | MATH | Muon | 0.0869 | 1/16 | 122 | 0.81 GB |
 | MATH | Dimuon | 0.0850 | 1/16 | 130 | 0.40 GB |
 
-These are synchronized DDP diagnostic pilots, not an RL superiority result. Numeric answers receive bounded log-distance shaping; symbolic MATH answers fall back to normalized exact matching. The reward baseline is rank-local, and larger rollout counts, multiple seeds, and a canonical reward protocol are required for a confirmatory RL comparison.
+These are synchronized DDP plumbing diagnostics, not an RL quality result. Numeric answers receive bounded log-distance shaping; the symbolic fallback is known to be unsound for some MATH expressions. The reward baseline is rank-local, and the sampling/log-probability mismatch invalidates quality ranking. Do not cite these rewards or exact-match counts as evidence for any optimizer.
 
 ## Interpretation
 
-The defensible result is a 32B, eight-B300 SFT/NoRA engineering pilot: Dimuon reaches the lowest held-out CE in the standard LoRA and full NoRA panels while using one quarter of AdamW's optimizer state and running materially faster than Muon. AdamW remains faster in standard LoRA. The corrected RL pilots validate synchronized policy-gradient plumbing but do not show a Dimuon quality win. The exact local DeepSeek-V4.1-Flash checkpoint could not be used because its available implementation is inference-only.
+The defensible result is a 32B, eight-B300 SFT/NoRA engineering pilot with a
+second-seed replication check: Dimuon reaches the lowest held-out CE in the
+standard LoRA and full NoRA panels while using one quarter of AdamW's optimizer
+state and running materially faster than Muon. AdamW remains faster in raw
+standard-LoRA throughput. The IniLoRA-alpha two-seed panel also favors Dimuon
+at its separately tuned lower learning rates, but its BF16 residual
+subtraction changes the starting model. The legacy RL artifacts validate some
+DDP plumbing but are invalid for quality ranking because of their sampling and
+answer-verification protocol. The strict v2 harness has passed CPU tests and
+an 8-GPU smoke, but no v2 RL quality result is claimed. The exact local
+DeepSeek-V4.1-Flash checkpoint could not be used because its available
+implementation is inference-only. A full equal-effort study is specified in
+`STUDY_PROTOCOL.md`; the 20-update panels are not that study.
