@@ -1,0 +1,6 @@
+# Tested with Python 3.12, torch 2.16.0.dev20261007+cu134, CUDA 13.4,
+# transformers 5.19.0 and 8× NVIDIA B300. Use the target environment's
+# compatible nightly PyTorch build because torch.optim.Muon is required.
+torch
+transformers
+matplotlib
