@@ -214,7 +214,11 @@ def run(method, args, rows, eval_rows, tokenizer, rank, world, device):
         opt.zero_grad(set_to_none=True)
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16,
                             enabled=device.type == "cuda"):
-            logits = module(input_ids=seq[:, :-1],
+            # Use the DDP wrapper for the gradient-bearing forward.  Calling
+            # module (the underlying model) here would bypass DDP's reducer
+            # and silently train eight rank-local policies.
+            train_model = model if world > 1 else module
+            logits = train_model(input_ids=seq[:, :-1],
                             attention_mask=torch.ones_like(seq[:, :-1]),
                             use_cache=False).logits
         lp = F.log_softmax(logits.float(), dim=-1).gather(
@@ -229,6 +233,16 @@ def run(method, args, rows, eval_rows, tokenizer, rank, world, device):
         loss = -float(advantage) * sequence_logp
         loss.backward()
         opt.step()
+        if world > 1:
+            # DDP should leave replicated LoRA masters equal after every step.
+            # Fail loudly if a future refactor accidentally bypasses its
+            # reducer again.
+            check = params[0].detach().norm().to(torch.float64)
+            lo, hi = check.clone(), check.clone()
+            dist.all_reduce(lo, op=dist.ReduceOp.MIN)
+            dist.all_reduce(hi, op=dist.ReduceOp.MAX)
+            if float(hi - lo) > 1e-5:
+                raise RuntimeError(f"DDP adapter divergence after step {step}: {float(hi-lo)}")
         baseline = args.baseline_decay * baseline + (1 - args.baseline_decay) * reward
         torch.cuda.synchronize(device) if device.type == "cuda" else None
         # Generation and backward are both part of RL step time.

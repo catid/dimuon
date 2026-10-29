@@ -63,23 +63,23 @@ IniLoRA-alpha samples both factors from N(0, 0.5) and subtracts the low-rank pro
 | GSM8K | Muon | 1e-3 | 20 | 1.3694 | 1.4832 | 25,502 | 0.81 GB |
 | GSM8K | Dimuon | 3e-3 | 20 | **0.7843** | **0.8447** | 39,096 | **0.40 GB** |
 
-A lower-LR panel (AdamW 3e-5, Muon 3e-4, Dimuon 1e-3) reached held-out CE 0.7194, 0.8380, and 0.7165, respectively. Dimuon remains slightly better than AdamW in both short panels, but this is not a clean comparison to standard LoRA because the initialization itself changes the model under BF16 rounding.
+A lower-LR panel (AdamW 3e-5, Muon 3e-4, Dimuon 1e-3) reached held-out CE 0.7194, 0.8380, and 0.7165, respectively. This lower-LR panel was better for all three methods than the mid-LR panel above; it is evidence that IniLoRA-alpha needs its own tuning, not evidence of a final optimizer ranking. The initialization itself changes the model under BF16 rounding.
 
 ## RL diagnostics
 
-`dimuon_lora_rl.py` performs actual synchronous REINFORCE: sampled completions are scored, sampled sequence log-probabilities are recomputed with gradients, and the optimizer updates FFN adapters. The pilots use 16 updates, 128 training rollouts per optimizer, 32 generated tokens, and 16 held-out questions.
+`dimuon_lora_rl.py` performs actual synchronous REINFORCE: sampled completions are scored, sampled sequence log-probabilities are recomputed with gradients, and the optimizer updates FFN adapters. The current code calls the DDP wrapper for the gradient-bearing forward and checks adapter replication after each update. The original pilot JSONs remain as pre-fix provenance; corrected artifacts are `results/gsm8k_rl16_ddpfix.json` and `results/math_rl16_ddpfix.json`.
 
 | Task | Optimizer | Mean shaped reward | Greedy held-out exact | Rollout tok/s | State |
 | --- | --- | ---: | ---: | ---: | ---: |
-| GSM8K | AdamW | 0.0729 | 0/16 | 118 | 1.61 GB |
-| GSM8K | Muon | 0.0736 | 2/16 | 121 | 0.81 GB |
-| GSM8K | Dimuon | 0.0624 | 1/16 | 116 | 0.40 GB |
-| MATH | AdamW | 0.0977 | 1/16 | 141 | 1.61 GB |
-| MATH | Muon | 0.0748 | 2/16 | 158 | 0.81 GB |
-| MATH | Dimuon | 0.0661 | 1/16 | 165 | 0.40 GB |
+| GSM8K | AdamW | 0.0549 | 0/16 | 98 | 1.61 GB |
+| GSM8K | Muon | 0.0806 | 0/16 | 121 | 0.81 GB |
+| GSM8K | Dimuon | 0.0588 | 1/16 | 125 | 0.40 GB |
+| MATH | AdamW | 0.0929 | 2/16 | 103 | 1.61 GB |
+| MATH | Muon | 0.0869 | 1/16 | 122 | 0.81 GB |
+| MATH | Dimuon | 0.0850 | 1/16 | 130 | 0.40 GB |
 
-These are one-seed diagnostic pilots, not an RL superiority result. Numeric answers receive bounded log-distance shaping; symbolic MATH answers fall back to normalized exact matching. The reward baseline is rank-local, and larger rollout counts/multiple seeds are required for a confirmatory RL comparison.
+These are synchronized DDP diagnostic pilots, not an RL superiority result. Numeric answers receive bounded log-distance shaping; symbolic MATH answers fall back to normalized exact matching. The reward baseline is rank-local, and larger rollout counts, multiple seeds, and a canonical reward protocol are required for a confirmatory RL comparison.
 
 ## Interpretation
 
-The defensible result is a 32B, eight-B300 SFT/NoRA engineering pilot: Dimuon reaches the lowest held-out CE in the standard LoRA and full NoRA panels while using one quarter of AdamW's optimizer state and running materially faster than Muon. AdamW remains faster in standard LoRA. The RL pilots demonstrate that the optimizer is wired into an online policy-gradient loop, but they do not show a quality win. The exact local DeepSeek-V4.1-Flash checkpoint could not be used because its available implementation is inference-only.
+The defensible result is a 32B, eight-B300 SFT/NoRA engineering pilot: Dimuon reaches the lowest held-out CE in the standard LoRA and full NoRA panels while using one quarter of AdamW's optimizer state and running materially faster than Muon. AdamW remains faster in standard LoRA. The corrected RL pilots validate synchronized policy-gradient plumbing but do not show a Dimuon quality win. The exact local DeepSeek-V4.1-Flash checkpoint could not be used because its available implementation is inference-only.

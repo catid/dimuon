@@ -19,7 +19,7 @@ def load(name):
 def by_method(name):
     return {row["method"]: row for row in load(name)["results"]}
 
-std_gsm = by_method("gsm8k_standard_lora_50.json")
+std_gsm = by_method("gsm8k_standard_lora_tuned_50.json")
 std_math = by_method("math_standard_lora_50.json")
 nora_gsm = by_method("gsm8k_nora_20.json")
 nora_math = by_method("math_nora_20.json")
