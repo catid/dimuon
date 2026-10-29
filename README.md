@@ -112,8 +112,9 @@ raw-policy generation configuration, the tokenizer chat template, complete
 boxed answers, `math_verify` for symbolic/numeric equivalence, summed response
 log-probabilities, a global previous-step baseline, full split-disjointness
 checks, and a full adapter digest across ranks. Its six CPU protocol tests
-pass; the 8-GPU smoke artifacts are protocol checks only and are not used as
-quality evidence in the tables.
+pass. The longer one-seed GSM8K/MATH diagnostics are summarized in
+[`STRICT_RL_V2_DIAGNOSTICS.md`](STRICT_RL_V2_DIAGNOSTICS.md); they are protocol
+checks rather than multi-seed quality evidence.
 
 ## Reproduce
 

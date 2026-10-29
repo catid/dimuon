@@ -140,6 +140,7 @@ residual subtraction changes the effective BF16 starting model, so its rows
 are an optimizer comparison within that parameterization. The legacy RL
 artifacts validate some DDP plumbing but are invalid for quality ranking
 because of their sampling and answer-verification protocol. The strict v2
-harness has passed CPU tests and an 8-GPU smoke, but no v2 RL quality result is
-claimed. The exact local DeepSeek-V4.1-Flash checkpoint could not be used
+harness has passed CPU tests and the longer one-seed GSM8K/MATH runs are
+recorded as protocol diagnostics only; no multi-seed v2 RL quality claim is
+made. The exact local DeepSeek-V4.1-Flash checkpoint could not be used
 because its available implementation is inference-only.
