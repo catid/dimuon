@@ -189,7 +189,14 @@ def prepare_plan(args):
         for key_b, questions_b in list(question_sets.items())[i + 1:]:
             if key_a != key_b and questions_a & questions_b:
                 raise ValueError(f"question overlap between {key_a} and {key_b}; create disjoint manifests")
-    python = str(Path(args.python).resolve(strict=True))
+    # Preserve the venv entry-point path.  ``Path.resolve()`` follows a venv's
+    # symlink into the base interpreter and silently drops the venv's torch and
+    # other packages.  Absolute normalization without symlink resolution keeps
+    # the selected environment intact while still making the plan portable.
+    python_path = Path(args.python).absolute()
+    if not python_path.is_file():
+        raise ValueError(f"--python is not a file: {python_path}")
+    python = str(python_path)
     plan = {
         "schema": SCHEMA, "datasets": datasets, "initializations": inits,
         "methods": list(METHODS), "lr_grid": selected_grid,
